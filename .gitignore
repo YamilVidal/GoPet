@@ -4,6 +4,8 @@ DLGO_code/
 
 
 # ML training artifacts (datasets, caches, checkpoints)
+training_data/datasets/
+training_data/usage/
 agents/**/data/
 agents/**/checkpoints/
 **/*_features.npy

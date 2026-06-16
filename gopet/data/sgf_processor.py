@@ -5,6 +5,7 @@ from __future__ import annotations
 import glob
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence, Tuple
 
@@ -23,6 +24,7 @@ from dlgo.gosgf import Sgf_game
 from gopet.board import FastBoard
 from gopet.encoding import encode_planes_numpy, move_to_action
 from gopet.game_state import GameState
+from gopet.progress import finish_progress_line, format_duration_hms, report_item_progress
 from gopet.types import Color, Move
 
 
@@ -97,11 +99,20 @@ class GoDatasetBuilder:
         sgf_paths: Sequence[str | Path],
         *,
         skip_errors: bool = False,
+        show_progress: bool = True,
+        phase: str = "preprocess",
     ) -> Tuple[np.ndarray, np.ndarray]:
         all_features: List[np.ndarray] = []
         all_labels: List[np.ndarray] = []
         skipped = 0
-        for path in sgf_paths:
+        num_files = len(sgf_paths)
+        next_progress = 5
+        phase_start = time.time()
+
+        if show_progress and num_files > 0:
+            print(f"{phase}: replaying {num_files:,} SGF files")
+
+        for file_index, path in enumerate(sgf_paths, start=1):
             content = Path(path).read_bytes()
             try:
                 features, labels = self.replay_game(content)
@@ -109,10 +120,29 @@ class GoDatasetBuilder:
                 if not skip_errors:
                     raise
                 skipped += 1
+                if show_progress:
+                    next_progress = report_item_progress(
+                        file_index,
+                        num_files,
+                        phase=phase,
+                        next_progress=next_progress,
+                        phase_start=phase_start,
+                    )
                 continue
             if len(features):
                 all_features.append(features)
                 all_labels.append(labels)
+            if show_progress:
+                next_progress = report_item_progress(
+                    file_index,
+                    num_files,
+                    phase=phase,
+                    next_progress=next_progress,
+                    phase_start=phase_start,
+                )
+
+        finish_progress_line(num_files, show_progress=show_progress)
+
         if skip_errors and skipped:
             print(f"Skipped {skipped} SGF files due to replay errors.", file=sys.stderr)
         if not all_features:
@@ -121,7 +151,16 @@ class GoDatasetBuilder:
                 dtype=np.float32,
             )
             return empty_f, np.zeros((0,), dtype=np.int64)
-        return np.concatenate(all_features, axis=0), np.concatenate(all_labels, axis=0)
+
+        merged_features = np.concatenate(all_features, axis=0)
+        merged_labels = np.concatenate(all_labels, axis=0)
+        if show_progress and num_files > 0:
+            elapsed = time.time() - phase_start
+            print(
+                f"{phase}: {len(merged_features):,} positions from "
+                f"{num_files - skipped:,} games in {format_duration_hms(elapsed)}"
+            )
+        return merged_features, merged_labels
 
     def save(self, features: np.ndarray, labels: np.ndarray, prefix: str) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)

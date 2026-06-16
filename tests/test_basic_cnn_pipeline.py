@@ -30,6 +30,10 @@ def test_build_training_arrays_from_fixture(tmp_path: Path) -> None:
         output_prefix="fixture",
         skip_errors=True,
         save=True,
+        dataset_id="fixture_test",
+        sgf_directory=FIXTURE_DIR,
+        max_games=1,
+        seed=0,
     )
 
     assert features.shape[1:] == (5, 19, 19)
@@ -37,6 +41,7 @@ def test_build_training_arrays_from_fixture(tmp_path: Path) -> None:
     assert features.shape[0] > 10
     assert (tmp_path / "fixture_features.npy").exists()
     assert (tmp_path / "fixture_labels.npy").exists()
+    assert (tmp_path / "manifest.json").exists()
 
 
 def test_replay_fixture_game() -> None:

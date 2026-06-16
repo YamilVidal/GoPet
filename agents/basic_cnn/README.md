@@ -31,11 +31,21 @@ pip install -r requirements.txt
 # Full run (example: ~5k games, several epochs)
 python run_train.py --max-games 5000 --epochs 10 --force-rebuild
 
+# Train the 5x5 variant (same data cache, separate checkpoints)
+python run_train.py --agent basic_cnn_5x5 --max-games 5000 --epochs 10
+
 # Resume more epochs on cached data
 python run_train.py --epochs 20 --resume agents/basic_cnn/checkpoints/basic_cnn_training_state.pt
 ```
 
-Training data lives under `Games/` (not in git). Cached shards and checkpoints go to `agents/basic_cnn/data/` and `agents/basic_cnn/checkpoints/` (also gitignored).
+Training data lives under `Games/` (not in git). Preprocessed shards are cached
+under `training_data/datasets/` (shared across agents, gitignored). Checkpoints
+go to `agents/basic_cnn/checkpoints/` (also gitignored).
+
+```bash
+# Reuse cached data by dataset id
+python run_train.py --dataset-id sgf_train_g5000_s0_bs19_p5 --epochs 20
+```
 
 Estimate wall-clock time before a long run:
 
@@ -121,7 +131,8 @@ Illegal moves are masked at inference (`gopet.encoding.mask_policy_logits`).
 |------|------|
 | [`model.py`](model.py) | `BasicPolicyCNN` definition |
 | [`train.py`](train.py) | Training loop, checkpoints, resume |
-| [`data.py`](data.py) | SGF subsampling and `.npy` cache |
+| [`data.py`](data.py) | SGF subsampling; writes shared cache under `training_data/` |
+| [`../../training_data/README.md`](../../training_data/README.md) | Shared dataset layout and usage tracking |
 | [`../../run_train.py`](../../run_train.py) | CLI entry point |
 | [`../../run_play.py`](../../run_play.py) | Browser play server |
 | [`../../inspect_training/`](../../inspect_training/) | Loss/accuracy plots |

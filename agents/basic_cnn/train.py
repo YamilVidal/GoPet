@@ -8,7 +8,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import numpy as np
 import torch
@@ -17,7 +17,13 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 
 from agents.basic_cnn.data import load_or_build_dataset
 from agents.basic_cnn.model import BasicPolicyCNN
+from gopet.data.training_cache import (
+    dataset_directory,
+    make_dataset_id,
+    record_agent_usage,
+)
 from gopet.encoding import NUM_BASIC_PLANES
+from gopet.progress import format_duration_hms, report_item_progress as _report_batch_progress
 from inspect_training.history import (
     EpochRecord,
     history_path_for_checkpoint,
@@ -28,9 +34,29 @@ from inspect_training.history import (
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SGF_DIR = ROOT / "Games" / "jgdb" / "sgf" / "train"
 DEFAULT_VAL_DIR = ROOT / "Games" / "jgdb" / "sgf" / "val"
-DEFAULT_DATA_DIR = Path(__file__).resolve().parent / "data"
 DEFAULT_CHECKPOINT_DIR = Path(__file__).resolve().parent / "checkpoints"
 FIXTURE_SGF_DIR = ROOT / "tests" / "fixtures" / "sgf"
+
+
+@dataclass(frozen=True)
+class AgentTrainConfig:
+    agent_id: str
+    checkpoint_stem: str
+    checkpoint_dir: Path
+    model_factory: Callable[[int], nn.Module]
+    description: str
+
+
+AGENT_CONFIG = AgentTrainConfig(
+    agent_id="basic_cnn",
+    checkpoint_stem="basic_cnn",
+    checkpoint_dir=DEFAULT_CHECKPOINT_DIR,
+    model_factory=lambda board_size: BasicPolicyCNN(
+        in_planes=NUM_BASIC_PLANES,
+        board_size=board_size,
+    ),
+    description="Train BasicPolicyCNN on SGF data",
+)
 
 
 @dataclass
@@ -126,9 +152,10 @@ def load_training_state(
     board_size: int,
     learning_rate: float,
     device: torch.device,
-) -> Tuple[BasicPolicyCNN, torch.optim.Optimizer, int, Optional[EpochMetrics]]:
+    model_factory: Callable[[int], nn.Module],
+) -> Tuple[nn.Module, torch.optim.Optimizer, int, Optional[EpochMetrics]]:
     payload = torch.load(resume_path, map_location=device)
-    model = BasicPolicyCNN(in_planes=NUM_BASIC_PLANES, board_size=board_size).to(device)
+    model = model_factory(board_size).to(device)
     model.load_state_dict(payload["model_state_dict"])
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -178,39 +205,6 @@ def make_dataloader(
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=shuffle)
     val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False)
     return train_loader, val_loader
-
-
-def format_duration_hms(seconds: float) -> str:
-    total = int(round(max(0.0, seconds)))
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-
-
-def _estimate_remaining_seconds(elapsed: float, percent: int) -> float:
-    if percent <= 0:
-        return 0.0
-    return elapsed * (100 - percent) / percent
-
-
-def _report_batch_progress(
-    batch_index: int,
-    num_batches: int,
-    *,
-    phase: str,
-    next_progress: int,
-    phase_start: float,
-) -> int:
-    if num_batches <= 0:
-        return next_progress
-    percent = int(100 * batch_index / num_batches)
-    elapsed = time.time() - phase_start
-    while next_progress <= percent and next_progress <= 100:
-        remaining = _estimate_remaining_seconds(elapsed, next_progress)
-        line = f"  {phase}: {next_progress:3d}%  ETA {format_duration_hms(remaining)}"
-        print(f"{line:<48}", end="\r", flush=True)
-        next_progress += 5
-    return next_progress
 
 
 def run_epoch(
@@ -279,9 +273,10 @@ def train_model(
     learning_rate: float,
     device: torch.device,
     checkpoint_path: Path,
+    model_factory: Callable[[int], nn.Module],
     resume_path: Optional[Path] = None,
     training_config: Optional[dict[str, Any]] = None,
-) -> BasicPolicyCNN:
+) -> nn.Module:
     train_loader, holdout_loader = make_dataloader(
         train_features,
         train_labels,
@@ -319,6 +314,7 @@ def train_model(
             board_size=board_size,
             learning_rate=learning_rate,
             device=device,
+            model_factory=model_factory,
         )
         start_epoch = completed_epoch + 1
         metrics_history = load_or_create_history(
@@ -337,7 +333,7 @@ def train_model(
             save_playable_model(model, checkpoint_path)
             return model
     else:
-        model = BasicPolicyCNN(in_planes=NUM_BASIC_PLANES, board_size=board_size).to(device)
+        model = model_factory(board_size).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         metrics_history = load_or_create_history(
             checkpoint_path,
@@ -447,8 +443,8 @@ def train_model(
     return model
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Train BasicPolicyCNN on SGF data")
+def build_parser(config: AgentTrainConfig) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=config.description)
     parser.add_argument(
         "--test",
         action="store_true",
@@ -456,7 +452,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--sgf-dir", default=None, help="Training SGF directory")
     parser.add_argument("--val-dir", default=None, help="Validation SGF directory")
-    parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Cached .npy directory")
+    parser.add_argument(
+        "--dataset-id",
+        default=None,
+        help="Shared dataset id under training_data/datasets/ (auto-derived if omitted)",
+    )
+    parser.add_argument(
+        "--data-dir",
+        default=None,
+        help="Override cached .npy directory (default: training_data/datasets/{dataset-id})",
+    )
     parser.add_argument(
         "--checkpoint",
         default=None,
@@ -479,33 +484,32 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def apply_test_defaults(args: argparse.Namespace) -> None:
+def apply_test_defaults(args: argparse.Namespace, config: AgentTrainConfig) -> None:
     if not args.test:
         return
     args.max_games = args.max_games or 25
     args.epochs = args.epochs or 2
     args.batch_size = args.batch_size or 32
-    args.data_dir = str(Path(args.data_dir) / "test")
     if args.checkpoint is None:
-        args.checkpoint = str(DEFAULT_CHECKPOINT_DIR / "test.pt")
+        args.checkpoint = str(config.checkpoint_dir / "test.pt")
 
 
-def apply_full_defaults(args: argparse.Namespace) -> None:
+def apply_full_defaults(args: argparse.Namespace, config: AgentTrainConfig) -> None:
     args.epochs = args.epochs or 5
     args.batch_size = args.batch_size or 64
     args.max_games = args.max_games or 4000
     if args.checkpoint is None:
-        args.checkpoint = str(DEFAULT_CHECKPOINT_DIR / "basic_cnn.pt")
+        args.checkpoint = str(config.checkpoint_dir / f"{config.checkpoint_stem}.pt")
 
 
-def main(argv: Optional[list[str]] = None) -> int:
-    parser = build_parser()
+def run_training(config: AgentTrainConfig, argv: Optional[list[str]] = None) -> int:
+    parser = build_parser(config)
     args = parser.parse_args(argv)
 
     if args.test:
-        apply_test_defaults(args)
+        apply_test_defaults(args, config)
     else:
-        apply_full_defaults(args)
+        apply_full_defaults(args, config)
 
     configure_cpu_threads(args.threads)
     device = torch.device("cpu")
@@ -513,9 +517,21 @@ def main(argv: Optional[list[str]] = None) -> int:
     train_sgf_dir = resolve_sgf_directory(args.sgf_dir, DEFAULT_SGF_DIR)
     val_sgf_dir = resolve_sgf_directory(args.val_dir, DEFAULT_VAL_DIR)
 
-    data_dir = Path(args.data_dir)
+    dataset_id = args.dataset_id or make_dataset_id(
+        train_sgf_directory=train_sgf_dir,
+        max_games=args.max_games,
+        seed=args.seed,
+        board_size=args.board_size,
+        num_planes=NUM_BASIC_PLANES,
+        test_mode=args.test,
+    )
+    data_dir = Path(args.data_dir) if args.data_dir else dataset_directory(dataset_id)
     train_prefix = "train"
     val_prefix = "val"
+
+    print(f"Agent: {config.agent_id}")
+    print(f"Dataset id: {dataset_id}")
+    print(f"Cached data directory: {data_dir}")
 
     print(f"Training SGF directory: {train_sgf_dir}")
     if not train_sgf_dir.exists():
@@ -528,7 +544,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         prefix=train_prefix,
         max_games=args.max_games,
         seed=args.seed,
+        board_size=args.board_size,
+        num_planes=NUM_BASIC_PLANES,
         force_rebuild=args.force_rebuild,
+        dataset_id=dataset_id,
     )
     if len(train_features) == 0:
         print("No training positions were generated.", file=sys.stderr)
@@ -550,7 +569,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                 prefix=val_prefix,
                 max_games=val_max_games,
                 seed=args.seed + 1,
+                board_size=args.board_size,
+                num_planes=NUM_BASIC_PLANES,
                 force_rebuild=args.force_rebuild,
+                dataset_id=dataset_id,
             )
             print(f"Loaded validation data: {len(val_features):,} positions")
     else:
@@ -559,6 +581,33 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.preprocess_only:
         print("Preprocessing complete.")
         return 0
+
+    training_config = {
+        "agent_id": config.agent_id,
+        "dataset_id": dataset_id,
+        "dataset_dir": str(data_dir.resolve()),
+        "board_size": args.board_size,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "learning_rate": args.lr,
+        "max_games": args.max_games,
+        "train_samples": len(train_features),
+        "seed": args.seed,
+        "num_planes": NUM_BASIC_PLANES,
+    }
+    record_agent_usage(
+        agent_id=config.agent_id,
+        dataset_id=dataset_id,
+        dataset_dir=data_dir,
+        usage_info={
+            "checkpoint": str(Path(args.checkpoint).resolve()),
+            "epochs": args.epochs,
+            "train_samples": len(train_features),
+            "val_samples": len(val_features) if val_features is not None else None,
+            "max_games": args.max_games,
+            "seed": args.seed,
+        },
+    )
 
     train_model(
         train_features=train_features,
@@ -571,18 +620,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         learning_rate=args.lr,
         device=device,
         checkpoint_path=Path(args.checkpoint),
+        model_factory=config.model_factory,
         resume_path=Path(args.resume) if args.resume else None,
-        training_config={
-            "board_size": args.board_size,
-            "epochs": args.epochs,
-            "batch_size": args.batch_size,
-            "learning_rate": args.lr,
-            "max_games": args.max_games,
-            "train_samples": len(train_features),
-            "seed": args.seed,
-        },
+        training_config=training_config,
     )
     return 0
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    return run_training(AGENT_CONFIG, argv)
 
 
 if __name__ == "__main__":
