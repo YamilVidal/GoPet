@@ -1,0 +1,160 @@
+:root {
+  font-family: "Segoe UI", "Avenir Next", sans-serif;
+  color: #1e1b17;
+  background: linear-gradient(165deg, #f4ecd9 0%, #e5d6b8 48%, #d2bf98 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.25rem;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 1.25rem;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 18px 28px rgba(0, 0, 0, 0.08);
+  padding: 1rem;
+}
+
+h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: #5b5448;
+  margin-bottom: 1rem;
+}
+
+.row {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+label {
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+select,
+button {
+  font: inherit;
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  border-radius: 10px;
+  padding: 0.52rem 0.62rem;
+  background: white;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.stat {
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  border-radius: 10px;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #655d4f;
+}
+
+.stat-value {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+#status {
+  min-height: 1.4rem;
+  font-weight: 600;
+}
+
+.log {
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  min-height: 140px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 0.55rem 0.65rem;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 0.77rem;
+  line-height: 1.35;
+}
+
+.board-wrap {
+  display: grid;
+  place-items: center;
+  min-height: 520px;
+}
+
+#board {
+  width: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.spinner {
+  display: none;
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid #ccc;
+  border-top-color: #555;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0.5rem auto;
+}
+
+.spinner.active {
+  display: block;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "gopet-web",
+  "private": true,
+  "description": "Browser UI for GoPet using jGoBoard",
+  "scripts": {
+    "postinstall": "node scripts/copy-vendor.js"
+  },
+  "dependencies": {
+    "jgoboard": "^5.0.4"
+  }
+}

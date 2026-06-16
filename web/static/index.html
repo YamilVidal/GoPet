@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GoPet — Play vs Bot</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="panel">
+        <h1>GoPet</h1>
+        <p class="hint">
+          Play against a GoPet agent in your browser. You play human moves; the
+          bot replies via the Python backend.
+        </p>
+
+        <div class="row">
+          <label for="board-size">Board size</label>
+          <select id="board-size">
+            <option value="9" selected>9 × 9</option>
+            <option value="13">13 × 13</option>
+            <option value="19">19 × 19</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="human-color">Your color</label>
+          <select id="human-color">
+            <option value="black" selected>Black</option>
+            <option value="white">White</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="agent">Bot agent</label>
+          <select id="agent"></select>
+        </div>
+
+        <div class="row">
+          <label for="theme">Board theme</label>
+          <select id="theme">
+            <option value="kaya-medium" selected>Kaya Medium</option>
+            <option value="walnut-medium">Walnut Medium</option>
+            <option value="bw-medium">Black &amp; White Medium</option>
+            <option value="kaya-large">Kaya Large</option>
+            <option value="walnut-large">Walnut Large</option>
+          </select>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat">
+            <div class="stat-label">To play</div>
+            <div class="stat-value" id="to-play">Black</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Move</div>
+            <div class="stat-value" id="move-number">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Black captures</div>
+            <div class="stat-value" id="black-captures">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">White captures</div>
+            <div class="stat-value" id="white-captures">0</div>
+          </div>
+        </div>
+
+        <div class="stat">
+          <div class="stat-label">Ko point</div>
+          <div class="stat-value" id="ko-point">none</div>
+        </div>
+
+        <div id="status">Loading...</div>
+        <div id="spinner" class="spinner"></div>
+
+        <div class="btn-row" style="margin-top: 0.85rem">
+          <button id="pass" type="button">Pass</button>
+          <button id="reset" type="button">New game</button>
+        </div>
+        <div class="btn-row" style="margin-top: 0.45rem">
+          <button id="undo" type="button">Undo</button>
+        </div>
+
+        <h2 style="font-size: 1rem; margin: 1rem 0 0.35rem">Move log</h2>
+        <div id="log" class="log"></div>
+      </aside>
+
+      <main class="panel board-wrap">
+        <div id="board"></div>
+      </main>
+    </div>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
