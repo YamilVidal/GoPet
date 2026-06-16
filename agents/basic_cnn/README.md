@@ -1,51 +1,77 @@
-# BasicPolicyCNN
+# BasicPolicyCNN (GoPet)
 
-A small convolutional policy network for **19×19 Go**, trained with supervised learning on professional SGF games. The design prioritizes fast CPU training and compatibility with the GoPet play server.
+A small convolutional Go policy network for **[GoPet](https://github.com/)** — a personal *pet project* to train and play **19×19 Go** on a laptop CPU, without GPUs or large-scale infrastructure.
 
-Implementation: [`model.py`](model.py)
+This agent learns from professional SGF games (supervised imitation) and plays through the GoPet browser UI. It is a **baseline policy net**, not a strong engine: no MCTS, no value head, no distributed training.
 
 ---
 
-## Overview
+## What this is
 
-`BasicPolicyCNN` predicts the **next move** (including pass) from the current board state. It is a **policy-only** network — there is no value head and no MCTS. At inference time, illegal moves are masked before selecting an action.
+GoPet is an experiment in building a minimal Go stack end-to-end:
+
+- Fast board engine and feature encoding (`gopet/`)
+- SGF replay → NumPy training data
+- A tiny CNN that predicts the next move
+- Browser play against the trained model
+- Optional territory scoring (goscorer) for resignation in human games
+
+`basic_cnn` is the first and simplest agent in that lineup — deliberately small (~66k parameters) so it can be trained in a few hours on CPU.
+
+---
+
+## Quick start
+
+### Train
+
+```bash
+# From repo root
+pip install -r requirements.txt
+
+# Full run (example: ~5k games, several epochs)
+python run_train.py --max-games 5000 --epochs 10 --force-rebuild
+
+# Resume more epochs on cached data
+python run_train.py --epochs 20 --resume agents/basic_cnn/checkpoints/basic_cnn_training_state.pt
+```
+
+Training data lives under `Games/` (not in git). Cached shards and checkpoints go to `agents/basic_cnn/data/` and `agents/basic_cnn/checkpoints/` (also gitignored).
+
+Estimate wall-clock time before a long run:
+
+```bash
+python estimate_training_time.py --games 5000 --epochs 10 --budget-hours 6
+```
+
+Inspect metrics after training:
+
+```bash
+python run_inspect_training.py summary
+python run_inspect_training.py plot
+```
+
+### Play
+
+```bash
+python run_play.py --model agents/basic_cnn/checkpoints/basic_cnn_latest.pt
+```
+
+Open http://127.0.0.1:5000/ and select the **policy** agent.
+
+---
+
+## Model at a glance
 
 | Property | Value |
 |----------|-------|
-| Board size | 19×19 |
-| Input channels | 5 |
-| Output logits | 362 (361 intersections + 1 pass) |
+| Board | 19×19 |
+| Input | 5 feature planes (`gopet.encoding`) |
+| Output | 362 logits (361 points + pass) |
 | Parameters | ~66k |
-| Target device | CPU |
+| Training | Supervised CE loss on expert moves |
+| Device | CPU |
 
----
-
-## Input: feature planes
-
-The network expects tensors shaped **`[batch, 5, 19, 19]`**, produced by `gopet.encoding.encode_state()` with `NUM_BASIC_PLANES = 5`.
-
-| Plane | Content |
-|-------|---------|
-| 0 | Current player's stones |
-| 1 | Opponent's stones |
-| 2 | Empty intersections |
-| 3 | Constant 1 if Black to play, else 0 |
-| 4 | Constant 1 if White to play, else 0 |
-
-Each plane is binary (0.0 or 1.0) except the side-to-move planes, which are uniform across the board.
-
----
-
-## Output: action space
-
-The model returns **`[batch, 362]`** unnormalized logits (one per legal action index):
-
-| Index range | Meaning |
-|-------------|---------|
-| `0 … 360` | Intersection moves, row-major: `index = row × 19 + col` |
-| `361` | Pass |
-
-During training, the label is the expert move from SGF replay. During play, logits for illegal moves are set to `-inf` via `gopet.encoding.mask_policy_logits()` before argmax.
+Implementation: [`model.py`](model.py)
 
 ---
 
@@ -56,87 +82,79 @@ Input [B, 5, 19, 19]
         │
         ▼
 ┌───────────────────────────────────┐
-│  Trunk (same spatial size 19×19)  │
-│  Conv 5→32, 3×3, pad 1  + ReLU    │
-│  Conv 32→32, 3×3, pad 1 + ReLU    │
-│  Conv 32→64, 3×3, pad 1 + ReLU    │
-│  Conv 64→64, 3×3, pad 1 + ReLU    │
+│  Trunk (spatial size stays 19×19) │
+│  Conv 5→32→32→64→64  (3×3, ReLU)  │
 └───────────────────────────────────┘
         │
         ├──────────────────────────────┐
         ▼                              ▼
-  Conv 64→1, 1×1                  Global avg pool
-  → [B, 1, 19, 19]                over 19×19
-  → flatten → [B, 361]            → [B, 64]
-        │                              │
-        │                         Linear 64→1
-        │                              │
+  Conv 1×1 → 361 board logits    GAP + Linear → pass logit
         └────────── concat ────────────┘
-                      │
                       ▼
               [B, 362] logits
 ```
 
-### Trunk
+### Input planes
 
-Four **3×3 convolutional layers** with `padding=1` keep the spatial resolution at 19×19 throughout. Channel progression: **5 → 32 → 32 → 64 → 64**. Each conv is followed by ReLU.
+| Plane | Content |
+|-------|---------|
+| 0 | Current player's stones |
+| 1 | Opponent's stones |
+| 2 | Empty intersections |
+| 3 | 1 if Black to move |
+| 4 | 1 if White to move |
 
-This stack extracts local stone patterns (captures, connections, liberties) without downsampling, which is important for move prediction on a full-size board.
+### Action index
 
-### Policy head (board moves)
+| Index | Meaning |
+|-------|---------|
+| `0 … 360` | `row × 19 + col` |
+| `361` | Pass |
 
-A **1×1 convolution** maps the 64-channel feature map to a single channel, producing one logit per intersection. The result is flattened to 361 values. This is cheaper and more natural than flattening the full feature map into a large dense layer.
-
-### Pass head
-
-**Global average pooling** over the 64-channel feature map summarizes the whole-board context into a 64-vector, then a **linear layer** outputs a single pass logit. Board and pass logits are concatenated.
-
----
-
-## Design choices
-
-| Choice | Rationale |
-|--------|-----------|
-| 5 input planes | Fast to encode; enough context for a baseline policy |
-| No max-pooling | Preserves one-to-one spatial alignment for move logits |
-| 1×1 spatial head | ~66k params; trains in hours on CPU |
-| Separate pass head | Pass is a global decision, not tied to one intersection |
-| No batch norm | Keeps the network small and training simple on CPU |
+Illegal moves are masked at inference (`gopet.encoding.mask_policy_logits`).
 
 ---
 
-## Training
-
-Supervised learning with **cross-entropy loss** against expert moves from SGF replay.
-
-```bash
-python run_train.py --max-games 5000 --epochs 9 --force-rebuild
-```
-
-Related modules:
+## Project layout
 
 | File | Role |
 |------|------|
+| [`model.py`](model.py) | `BasicPolicyCNN` definition |
 | [`train.py`](train.py) | Training loop, checkpoints, resume |
 | [`data.py`](data.py) | SGF subsampling and `.npy` cache |
-| [`../../estimate_training_time.py`](../../estimate_training_time.py) | Time estimates for games/epoch settings |
-
-Checkpoints are saved after every epoch (`basic_cnn.pt`, `basic_cnn_latest.pt`, per-epoch snapshots, and a resume state file).
+| [`../../run_train.py`](../../run_train.py) | CLI entry point |
+| [`../../run_play.py`](../../run_play.py) | Browser play server |
+| [`../../inspect_training/`](../../inspect_training/) | Loss/accuracy plots |
+| [`../../score_estimation/`](../../score_estimation/) | Territory + seki scoring |
 
 ---
 
-## Inference
+## Behaviour in human games
 
-Load a checkpoint in the browser server:
+When playing a human via the web UI, the policy agent can **resign** if:
 
-```bash
-python run_play.py --model agents/basic_cnn/checkpoints/basic_cnn_latest.pt
-```
+- move count ≥ 120, and
+- estimated score (goscorer) shows a deficit ≥ 60 points
 
-`PolicyAgent` in `gopet/web/agents.py` loads the saved `nn.Module`, encodes the board, runs a forward pass, masks illegal moves, and picks the highest-probability legal action.
+Resignation is disabled for bot-vs-bot / self-play runs.
 
 ---
 
 ## Limitations
 
-This is a **baseline supervised policy**. It learns to imitate training games but does not search ahead. Expect play that is better than random but far below strong human or engine level. Future improvements could add more input planes (liberties, ko), a value head, or MCTS.
+This is a learning project, not a production Go engine:
+
+- Imitates training data; does not search ahead
+- No capture tracking in score estimation yet
+- Mid-game score estimates can be wrong in unsettled fights
+- Strength is “better than random”, not dan-level
+
+Possible next steps: ownership head, more input planes, MCTS, self-play.
+
+---
+
+## License & data
+
+- GoPet code: see repository root
+- SGF training data (e.g. JGDB): download separately into `Games/` — not shipped with the repo
+- Vendored [goscorer](https://github.com/lightvector/goscorer) (MIT) in `score_estimation/`

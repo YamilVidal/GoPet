@@ -10,7 +10,7 @@ import numpy as np
 
 from gopet.encoding import legal_mask_numpy, mask_policy_logits
 from gopet.game_state import GameState
-from gopet.types import Move
+from gopet.types import BLACK, Color, Move
 from gopet.web.coords import move_from_vertex, point_to_vertex, vertex_from_move
 
 
@@ -68,43 +68,54 @@ class PolicyAgent(Agent):
             cursor = cursor.previous_state
         return count
 
-    def _should_resign(self, state: GameState) -> bool:
+    def _update_score_estimate(self, state: GameState) -> None:
         if not self._against_human:
             self._last_score_estimate = {"disabled": True, "reason": "not_against_human"}
-            return False
+            return
 
         move_count = self._move_count(state)
-        if move_count < self.RESIGN_AFTER_MOVE:
-            self._last_score_estimate = {"move_count": move_count}
-            return False
-
         try:
-            from score_estimation.territory_seki import estimate_territory_score_with_seki
+            from score_estimation.territory_seki import estimate_score_during_play
 
-            est = estimate_territory_score_with_seki(state, komi=7.5)
+            est = estimate_score_during_play(state, komi=7.5)
             diff = float(est.score_diff_black_minus_white)
-            # If it's Black to play and Black is behind by >= margin, resign.
-            # If it's White to play and Black is ahead by >= margin, resign.
-            resign = (state.next_player == 1 and diff <= -self.RESIGN_POINT_MARGIN) or (
-                state.next_player == 2 and diff >= self.RESIGN_POINT_MARGIN
-            )
+            bot_is_black = int(state.next_player) == BLACK
+            bot_margin = diff if bot_is_black else -diff
             self._last_score_estimate = {
                 "move_count": move_count,
                 "estimate": str(est),
                 "diff_black_minus_white": diff,
-                "resign": resign,
+                "bot_margin": bot_margin,
             }
-            return resign
         except Exception as exc:
-            # Never crash gameplay due to score estimation.
             self._last_score_estimate = {"move_count": move_count, "error": str(exc)}
+
+    def _should_resign(self, state: GameState) -> bool:
+        if not self._against_human:
             return False
+
+        info = self._last_score_estimate or {}
+        move_count = int(info.get("move_count", 0))
+        if move_count < self.RESIGN_AFTER_MOVE:
+            return False
+
+        diff = info.get("diff_black_minus_white")
+        if diff is None:
+            return False
+
+        resign = (int(state.next_player) == BLACK and diff <= -self.RESIGN_POINT_MARGIN) or (
+            int(state.next_player) != BLACK and diff >= self.RESIGN_POINT_MARGIN
+        )
+        info["resign"] = resign
+        self._last_score_estimate = info
+        return resign
 
     def select_move(self, state: GameState) -> Move:
         import torch
 
         from gopet.encoding import encode_state
 
+        self._update_score_estimate(state)
         if self._should_resign(state):
             return Move.resign()
 

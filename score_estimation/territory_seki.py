@@ -1,10 +1,13 @@
-"""Territory score estimation with seki detection (goscorer).
+"""Score estimation helpers: area scoring for live play, territory+seki for endgame.
 
-This module wraps the vendored `score_estimation.goscorer` implementation.
+This module wraps the vendored `score_estimation.goscorer` implementation for
+Japanese-style territory scoring, and GoPet's area scorer for mid-game estimates.
 
 Notes:
-- This is primarily intended for *end-ish game* score estimation and resignation logic.
-- Like other territory estimators, results can be unreliable in unsettled fights.
+- `estimate_score_during_play` counts stones on the board plus surrounded empty
+  points (area style). Use this for live display and resignation during a game.
+- `estimate_territory_score_with_seki` counts only empty territory, dead stones,
+  and prisoners — not living stones — so mid-game it stays near komi only.
 - We currently pass capture counts as 0 because GoPet does not track them yet.
 """
 
@@ -58,6 +61,25 @@ def _default_marked_dead(state: GameState) -> List[List[bool]]:
 
     height, width = state.board.height, state.board.width
     return [[False for _ in range(width)] for _ in range(height)]
+
+
+def estimate_area_score(state: GameState, *, komi: float = 7.5) -> ScoreEstimate:
+    """Estimate score using area counting (stones + surrounded empty points)."""
+
+    from gopet.scoring import compute_game_result
+
+    result = compute_game_result(state, komi=komi)
+    return ScoreEstimate(
+        black_points=float(result.b),
+        white_points=float(result.w),
+        komi=komi,
+    )
+
+
+def estimate_score_during_play(state: GameState, *, komi: float = 7.5) -> ScoreEstimate:
+    """Mid-game score estimate suitable for live display and resignation."""
+
+    return estimate_area_score(state, komi=komi)
 
 
 def estimate_territory_score_with_seki(

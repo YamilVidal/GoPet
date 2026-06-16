@@ -50,16 +50,45 @@ function formatPct(prob) {
   return `${(prob * 100).toFixed(1)}%`;
 }
 
+function formatScoreEstimate(scoreEstimate) {
+  if (!scoreEstimate || scoreEstimate.disabled) {
+    return null;
+  }
+  if (scoreEstimate.error) {
+    return `score error: ${scoreEstimate.error}`;
+  }
+  if (!scoreEstimate.estimate) {
+    return null;
+  }
+  const margin = scoreEstimate.bot_margin;
+  if (typeof margin === "number") {
+    const ahead = margin >= 0 ? "bot ahead" : "bot behind";
+    return `score ${scoreEstimate.estimate} (${ahead} ${Math.abs(margin).toFixed(1)})`;
+  }
+  return `score ${scoreEstimate.estimate}`;
+}
+
 function formatDiagnostics(diagnostics) {
-  if (!diagnostics.top_moves || diagnostics.top_moves.length === 0) {
+  const parts = [];
+
+  if (diagnostics.top_moves && diagnostics.top_moves.length > 0) {
+    const ranked = diagnostics.top_moves
+      .map((entry) => `#${entry.rank} ${entry.move} ${formatPct(entry.prob)}`)
+      .join(", ");
+    parts.push(ranked);
+    parts.push(`pass ${formatPct(diagnostics.pass_prob ?? 0)}`);
+  }
+
+  const scoreText = formatScoreEstimate(diagnostics.score_estimate);
+  if (scoreText) {
+    parts.push(scoreText);
+  }
+
+  if (parts.length === 0) {
     return `diagnostics: ${JSON.stringify(diagnostics)}`;
   }
 
-  const ranked = diagnostics.top_moves
-    .map((entry) => `#${entry.rank} ${entry.move} ${formatPct(entry.prob)}`)
-    .join(", ");
-  const passProb = formatPct(diagnostics.pass_prob ?? 0);
-  return `diagnostics: ${ranked}, pass ${passProb}`;
+  return `diagnostics: ${parts.join(", ")}`;
 }
 
 function setStatus(text) {
