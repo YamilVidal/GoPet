@@ -20,6 +20,8 @@ class HistoryEntry:
     board_snapshot: BoardSnapshot
     next_player: Color
     previous_signatures: FrozenSet[Tuple[Color, bytes]]
+    black_captures: int
+    white_captures: int
 
 
 class GameState:
@@ -29,11 +31,16 @@ class GameState:
         next_player: Color,
         previous: Optional[GameState] = None,
         move: Optional[Move] = None,
+        *,
+        black_captures: int = 0,
+        white_captures: int = 0,
     ) -> None:
         self.board = board
         self.next_player = next_player
         self.previous_state = previous
         self.last_move = move
+        self.black_captures = black_captures
+        self.white_captures = white_captures
 
         if previous is None:
             self.previous_signatures: FrozenSet[Tuple[Color, bytes]] = frozenset()
@@ -56,19 +63,40 @@ class GameState:
         return cls(board, Color.black, None, None)
 
     def clone(self) -> GameState:
-        cloned = GameState(self.board.clone(), self.next_player, None, self.last_move)
+        cloned = GameState(
+            self.board.clone(),
+            self.next_player,
+            None,
+            self.last_move,
+            black_captures=self.black_captures,
+            white_captures=self.white_captures,
+        )
         cloned.previous_signatures = self.previous_signatures
         cloned.previous_state = self.previous_state
         return cloned
 
     def apply_move(self, move: Move) -> GameState:
         next_board = self.board.clone()
+        black_captures = self.black_captures
+        white_captures = self.white_captures
         if move.is_play:
             assert move.point is not None
             row, col = move.point.row, move.point.col
-            if not next_board.place_stone(self.next_player, row, col):
+            placed, captured = next_board.place_stone(self.next_player, row, col)
+            if not placed:
                 raise ValueError(f"Illegal move: {move}")
-        return GameState(next_board, self.next_player.other, self, move)
+            if self.next_player == Color.black:
+                black_captures += captured
+            else:
+                white_captures += captured
+        return GameState(
+            next_board,
+            self.next_player.other,
+            self,
+            move,
+            black_captures=black_captures,
+            white_captures=white_captures,
+        )
 
     def apply_move_mut(self, move: Move) -> None:
         """Apply a move in place, recording undo state."""
@@ -76,15 +104,22 @@ class GameState:
             board_snapshot=self.board.snapshot(),
             next_player=self.next_player,
             previous_signatures=self.previous_signatures,
+            black_captures=self.black_captures,
+            white_captures=self.white_captures,
         )
         self._undo_stack.append(entry)
 
         if move.is_play:
             assert move.point is not None
             row, col = move.point.row, move.point.col
-            if not self.board.place_stone(self.next_player, row, col):
+            placed, captured = self.board.place_stone(self.next_player, row, col)
+            if not placed:
                 self._undo_stack.pop()
                 raise ValueError(f"Illegal move: {move}")
+            if self.next_player == Color.black:
+                self.black_captures += captured
+            else:
+                self.white_captures += captured
 
         self.previous_signatures = frozenset(
             self.previous_signatures | {(self.next_player, board_signature(self.board))}
@@ -100,6 +135,8 @@ class GameState:
         self.board.restore(entry.board_snapshot)
         self.next_player = entry.next_player
         self.previous_signatures = entry.previous_signatures
+        self.black_captures = entry.black_captures
+        self.white_captures = entry.white_captures
         self.last_move = None
         self.previous_state = None
 
@@ -118,7 +155,8 @@ class GameState:
             return False
 
         snapshot = self.board.snapshot()
-        if not self.board.place_stone(player, row, col):
+        placed, _ = self.board.place_stone(player, row, col)
+        if not placed:
             self.board.restore(snapshot)
             return False
         next_situation = (player.other, board_signature(self.board))

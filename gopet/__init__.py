@@ -13,7 +13,7 @@ from gopet.encoding import (
 )
 from gopet.env import GoEnv
 from gopet.game_state import GameState
-from gopet.scoring import GameResult, compute_game_result, evaluate_territory
+from gopet.scoring import GameResult, compute_game_result, compute_territory_score, evaluate_territory
 from gopet.types import BLACK, EMPTY, WHITE, Color, Move, Point
 
 __all__ = [
@@ -28,6 +28,7 @@ __all__ = [
     "GoEnv",
     "GameResult",
     "compute_game_result",
+    "compute_territory_score",
     "evaluate_territory",
     "encode_batch",
     "encode_planes_numpy",

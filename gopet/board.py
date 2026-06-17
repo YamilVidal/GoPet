@@ -111,12 +111,16 @@ class FastBoard:
         self.chain_color[:] = snapshot.chain_color
         self.hash = snapshot.hash
 
-    def place_stone(self, color: Color | int, row: int, col: int) -> bool:
-        """Place a stone. Returns False if occupied or suicide."""
+    def place_stone(self, color: Color | int, row: int, col: int) -> Tuple[bool, int]:
+        """Place a stone.
+
+        Returns:
+            (success, number of opponent stones captured)
+        """
         if not self.is_on_grid(row, col):
             raise ValueError(f"Point ({row}, {col}) is off the board")
         if self.stones[row, col] != EMPTY:
-            return False
+            return False, 0
 
         color_val = int(color)
         idx = self.index(row, col)
@@ -126,8 +130,8 @@ class FastBoard:
         root = self._find(idx)
         if self.chain_liberties[root] == 0 and not captured:
             self.restore(snapshot)
-            return False
-        return True
+            return False, 0
+        return True, len(captured)
 
     def is_self_capture(self, color: Color | int, row: int, col: int) -> bool:
         if not self.is_on_grid(row, col) or self.stones[row, col] != EMPTY:

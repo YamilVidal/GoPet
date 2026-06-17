@@ -96,14 +96,14 @@ def test_random_game_parity(size: int) -> None:
 
 def test_capture_and_undo() -> None:
     board = FastBoard(9)
-    assert board.place_stone(Color.black, 4, 4)
-    assert board.place_stone(Color.white, 3, 4)
-    assert board.place_stone(Color.white, 5, 4)
-    assert board.place_stone(Color.white, 4, 3)
+    assert board.place_stone(Color.black, 4, 4) == (True, 0)
+    assert board.place_stone(Color.white, 3, 4) == (True, 0)
+    assert board.place_stone(Color.white, 5, 4) == (True, 0)
+    assert board.place_stone(Color.white, 4, 3) == (True, 0)
 
     snapshot = board.snapshot()
     assert board.get(4, 4) == Color.black.value
-    assert board.place_stone(Color.white, 4, 5)
+    assert board.place_stone(Color.white, 4, 5) == (True, 1)
     assert board.get(4, 4) == 0
 
     board.restore(snapshot)
@@ -164,7 +164,7 @@ def test_sgf_final_position() -> None:
         assert player == next_player
         if move_tuple is not None:
             row, col = move_tuple
-            assert board.place_stone(player, row, col)
+            assert board.place_stone(player, row, col)[0]
         next_player = player.other
 
     dlgo_board = DlgoBoard(19, 19)

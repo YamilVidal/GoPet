@@ -6,9 +6,8 @@ Japanese-style territory scoring, and GoPet's area scorer for mid-game estimates
 Notes:
 - `estimate_score_during_play` counts stones on the board plus surrounded empty
   points (area style). Use this for live display and resignation during a game.
-- `estimate_territory_score_with_seki` counts only empty territory, dead stones,
-  and prisoners — not living stones — so mid-game it stays near komi only.
-- We currently pass capture counts as 0 because GoPet does not track them yet.
+- `estimate_territory_score_with_seki` counts empty territory, prisoners, and dead
+  stones via goscorer (not living stones on the board).
 """
 
 from __future__ import annotations
@@ -106,13 +105,11 @@ def estimate_territory_score_with_seki(
     else:
         marked_dead_matrix = [list(row) for row in marked_dead]
 
-    # GoPet currently doesn't track captured stones explicitly, so we pass captures=0.
-    # goscorer returns a dict {BLACK: black_points, WHITE: white_points_including_komi}.
     final_scores = _goscorer.final_territory_score(
         stones,
         marked_dead_matrix,
-        black_points_from_captures=0,
-        white_points_from_captures=0,
+        black_points_from_captures=state.black_captures,
+        white_points_from_captures=state.white_captures,
         komi=komi,
         score_false_eyes=score_false_eyes,
     )

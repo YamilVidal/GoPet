@@ -32,7 +32,12 @@ class Territory:
                 self.num_dame += 1
 
 
-class GameResult(namedtuple("GameResult", "b w komi")):
+class GameResult(
+    namedtuple(
+        "GameResult",
+        "b w komi black_captures white_captures black_territory white_territory",
+    )
+):
     @property
     def winner(self) -> Color:
         if self.b > self.w + self.komi:
@@ -47,8 +52,14 @@ class GameResult(namedtuple("GameResult", "b w komi")):
     def __str__(self) -> str:
         w = self.w + self.komi
         if self.b > w:
-            return f"B+{self.b - w:.1f}"
-        return f"W+{w - self.b:.1f}"
+            margin = f"B+{self.b - w:.1f}"
+        else:
+            margin = f"W+{w - self.b:.1f}"
+        return (
+            f"{margin} "
+            f"(area B={self.b:.0f} W={self.w:.0f}, "
+            f"captures B={self.black_captures} W={self.white_captures})"
+        )
 
 
 def evaluate_territory(board: FastBoard) -> Territory:
@@ -110,9 +121,39 @@ def _collect_region(
 
 
 def compute_game_result(game_state: GameState, komi: float = 7.5) -> GameResult:
+    """Score using area counting (stones + surrounded empty points).
+
+    Captured stones are tracked on ``GameState`` and reported in the result.
+    Area points already reflect stones removed by capture, so prisoners are not
+    added again to ``b``/``w``.
+    """
+
     territory = evaluate_territory(game_state.board)
+    black_area = territory.num_black_territory + territory.num_black_stones
+    white_area = territory.num_white_territory + territory.num_white_stones
     return GameResult(
-        territory.num_black_territory + territory.num_black_stones,
-        territory.num_white_territory + territory.num_white_stones,
+        black_area,
+        white_area,
         komi=komi,
+        black_captures=game_state.black_captures,
+        white_captures=game_state.white_captures,
+        black_territory=territory.num_black_territory,
+        white_territory=territory.num_white_territory,
+    )
+
+
+def compute_territory_score(game_state: GameState, komi: float = 7.5) -> GameResult:
+    """Japanese-style empty territory plus prisoners (no stones on board)."""
+
+    territory = evaluate_territory(game_state.board)
+    black_captures = game_state.black_captures
+    white_captures = game_state.white_captures
+    return GameResult(
+        territory.num_black_territory + black_captures,
+        territory.num_white_territory + white_captures,
+        komi=komi,
+        black_captures=black_captures,
+        white_captures=white_captures,
+        black_territory=territory.num_black_territory,
+        white_territory=territory.num_white_territory,
     )
