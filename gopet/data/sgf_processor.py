@@ -42,10 +42,10 @@ class GoDatasetBuilder:
         self.data_dir = Path(data_directory)
 
     @staticmethod
-    def get_handicap(sgf: Sgf_game) -> Tuple[GameState, bool]:
-        board = FastBoard(19, 19)
+    def get_handicap(sgf: Sgf_game, board_size: int) -> Tuple[GameState, bool]:
+        board = FastBoard(board_size, board_size)
         first_move_done = False
-        game_state = GameState.new_game(19)
+        game_state = GameState.new_game(board_size)
 
         handicap = sgf.get_handicap()
         if handicap is not None and handicap != 0:
@@ -62,7 +62,7 @@ class GoDatasetBuilder:
         sgf_content: bytes,
     ) -> Tuple[np.ndarray, np.ndarray]:
         sgf = Sgf_game.from_string(sgf_content)
-        game_state, first_move_done = self.get_handicap(sgf)
+        game_state, first_move_done = self.get_handicap(sgf, self.board_size)
 
         features: List[np.ndarray] = []
         labels: List[int] = []

@@ -15,6 +15,29 @@ def board_signature(board: FastBoard) -> bytes:
     return board.stones.tobytes()
 
 
+@dataclass(frozen=True)
+class _PriorState:
+    """Lightweight move history for in-place play (undo / step)."""
+
+    last_move: Optional[Move]
+    previous: Optional["_PriorState"]
+
+
+def _as_prior_chain(previous: Optional[object]) -> Optional[_PriorState]:
+    if previous is None:
+        return None
+    if isinstance(previous, _PriorState):
+        return previous
+    if isinstance(previous, GameState):
+        if previous.last_move is None and previous.previous_state is None:
+            return None
+        return _PriorState(
+            previous.last_move,
+            _as_prior_chain(previous.previous_state),
+        )
+    return None
+
+
 @dataclass
 class HistoryEntry:
     board_snapshot: BoardSnapshot
@@ -22,6 +45,8 @@ class HistoryEntry:
     previous_signatures: FrozenSet[Tuple[Color, bytes]]
     black_captures: int
     white_captures: int
+    last_move: Optional[Move]
+    previous_state: Optional[object]
 
 
 class GameState:
@@ -50,8 +75,7 @@ class GameState:
                 | {(previous.next_player, board_signature(previous.board))}
             )
 
-        self._undo_stack: List[HistoryEntry] = field(default_factory=list) if False else []
-        self._undo_stack = []
+        self._undo_stack: List[HistoryEntry] = []
 
     @classmethod
     def new_game(cls, board_size: int | Tuple[int, int]) -> GameState:
@@ -106,8 +130,16 @@ class GameState:
             previous_signatures=self.previous_signatures,
             black_captures=self.black_captures,
             white_captures=self.white_captures,
+            last_move=self.last_move,
+            previous_state=self.previous_state,
         )
         self._undo_stack.append(entry)
+
+        # Record board position before this ply (same semantics as immutable apply_move).
+        self.previous_signatures = frozenset(
+            self.previous_signatures
+            | {(self.next_player, board_signature(self.board))}
+        )
 
         if move.is_play:
             assert move.point is not None
@@ -115,18 +147,26 @@ class GameState:
             placed, captured = self.board.place_stone(self.next_player, row, col)
             if not placed:
                 self._undo_stack.pop()
+                self.previous_signatures = entry.previous_signatures
                 raise ValueError(f"Illegal move: {move}")
             if self.next_player == Color.black:
                 self.black_captures += captured
             else:
                 self.white_captures += captured
 
-        self.previous_signatures = frozenset(
-            self.previous_signatures | {(self.next_player, board_signature(self.board))}
-        )
-        self.previous_state = self
+        self.previous_state = _PriorState(self.last_move, _as_prior_chain(self.previous_state))
         self.next_player = self.next_player.other
         self.last_move = move
+
+    def _second_last_move(self) -> Optional[Move]:
+        previous = self.previous_state
+        if previous is None:
+            return None
+        if isinstance(previous, _PriorState):
+            return previous.last_move
+        if isinstance(previous, GameState):
+            return previous.last_move
+        return None
 
     def undo(self) -> None:
         if not self._undo_stack:
@@ -137,8 +177,8 @@ class GameState:
         self.previous_signatures = entry.previous_signatures
         self.black_captures = entry.black_captures
         self.white_captures = entry.white_captures
-        self.last_move = None
-        self.previous_state = None
+        self.last_move = entry.last_move
+        self.previous_state = entry.previous_state
 
     def is_move_self_capture(self, player: Color, move: Move) -> bool:
         if not move.is_play:
@@ -183,9 +223,7 @@ class GameState:
             return False
         if self.last_move.is_resign:
             return True
-        if self.previous_state is None:
-            return False
-        second_last = self.previous_state.last_move
+        second_last = self._second_last_move()
         if second_last is None:
             return False
         return self.last_move.is_pass and second_last.is_pass
@@ -230,8 +268,7 @@ class GameState:
             move = Move.play(row, col)
         if not self.is_valid_move(move):
             raise ValueError(f"Illegal action: {action}")
-        next_state = self.clone()
-        next_state.apply_move_mut(move)
+        next_state = self.apply_move(move)
         done = next_state.is_over()
         reward = 0.0
         if done:

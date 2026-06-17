@@ -186,7 +186,7 @@ def cache_is_valid(
 
     manifest = load_manifest(data_dir)
     if manifest is None:
-        return True
+        return False
 
     split = manifest.split_record(prefix)
     if split is None:

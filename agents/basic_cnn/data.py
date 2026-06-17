@@ -102,7 +102,14 @@ def load_or_build_dataset(
         board_size=board_size,
         num_planes=num_planes,
     ):
-        return np.load(features_path), np.load(labels_path)
+        features = np.load(features_path)
+        labels = np.load(labels_path)
+        if features.shape[0] != labels.shape[0]:
+            raise ValueError(
+                f"Cache shape mismatch for '{prefix}': "
+                f"{features.shape[0]} features vs {labels.shape[0]} labels"
+            )
+        return features, labels
 
     paths = sample_sgf_paths(sgf_directory, max_games=max_games, seed=seed)
     if not paths:
@@ -110,16 +117,30 @@ def load_or_build_dataset(
 
     print(f"Building cached dataset split '{prefix}' ({len(paths):,} SGF files)")
 
-    return build_training_arrays(
-        paths,
-        data_directory=data_directory,
-        output_prefix=prefix,
-        num_planes=num_planes,
-        board_size=board_size,
-        skip_errors=skip_errors,
-        save=True,
-        dataset_id=dataset_id,
-        sgf_directory=sgf_directory,
-        max_games=max_games,
-        seed=seed,
-    )
+    try:
+        features, labels = build_training_arrays(
+            paths,
+            data_directory=data_directory,
+            output_prefix=prefix,
+            num_planes=num_planes,
+            board_size=board_size,
+            skip_errors=skip_errors,
+            save=True,
+            dataset_id=dataset_id,
+            sgf_directory=sgf_directory,
+            max_games=max_games,
+            seed=seed,
+        )
+    except Exception:
+        for path in (features_path, labels_path):
+            if path.exists():
+                path.unlink()
+        raise
+
+    if len(features) == 0:
+        for path in (features_path, labels_path):
+            if path.exists():
+                path.unlink()
+        raise ValueError(f"No training positions produced for split '{prefix}'")
+
+    return features, labels

@@ -102,6 +102,7 @@ def save_training_state(
     checkpoint_path: Path,
     training_config: dict[str, Any],
     interrupted: bool = False,
+    resume_at_epoch: Optional[int] = None,
 ) -> None:
     paths = checkpoint_paths(checkpoint_path)
     payload = {
@@ -112,6 +113,8 @@ def save_training_state(
         "training_config": training_config,
         "interrupted": interrupted,
     }
+    if resume_at_epoch is not None:
+        payload["resume_at_epoch"] = resume_at_epoch
     torch.save(payload, paths["training_state"])
 
 
@@ -153,8 +156,26 @@ def load_training_state(
     learning_rate: float,
     device: torch.device,
     model_factory: Callable[[int], nn.Module],
+    training_config: Optional[dict[str, Any]] = None,
 ) -> Tuple[nn.Module, torch.optim.Optimizer, int, Optional[EpochMetrics]]:
     payload = torch.load(resume_path, map_location=device)
+    if not isinstance(payload, dict) or "model_state_dict" not in payload:
+        raise ValueError(
+            f"Resume checkpoint is not a training-state file: {resume_path}. "
+            "Use a *_training_state.pt file."
+        )
+
+    saved_config = payload.get("training_config") or {}
+    if training_config is not None:
+        for key in ("board_size", "dataset_id", "agent_id", "num_planes"):
+            expected = training_config.get(key)
+            saved = saved_config.get(key)
+            if expected is not None and saved is not None and expected != saved:
+                raise ValueError(
+                    f"Resume config mismatch for '{key}': checkpoint has {saved!r}, "
+                    f"current run has {expected!r}"
+                )
+
     model = model_factory(board_size).to(device)
     model.load_state_dict(payload["model_state_dict"])
 
@@ -162,6 +183,11 @@ def load_training_state(
     optimizer.load_state_dict(payload["optimizer_state_dict"])
 
     completed_epoch = int(payload["epoch"])
+    if payload.get("interrupted"):
+        resume_at = payload.get("resume_at_epoch")
+        if resume_at is not None:
+            completed_epoch = int(resume_at) - 1
+
     metrics_data = payload.get("metrics")
     metrics = EpochMetrics(**metrics_data) if metrics_data else None
     return model, optimizer, completed_epoch, metrics
@@ -315,6 +341,7 @@ def train_model(
             learning_rate=learning_rate,
             device=device,
             model_factory=model_factory,
+            training_config=training_config,
         )
         start_epoch = completed_epoch + 1
         metrics_history = load_or_create_history(
@@ -427,10 +454,11 @@ def train_model(
                 checkpoint_path=checkpoint_path,
                 training_config=training_config,
                 interrupted=True,
+                resume_at_epoch=current_epoch,
             )
             print(
                 f"Saved playable model to {paths['final']} and {paths['latest']}. "
-                f"Resume from epoch {last_metrics.epoch + 1} with "
+                f"Resume from epoch {current_epoch} with "
                 f"--resume {paths['training_state']}"
             )
         else:

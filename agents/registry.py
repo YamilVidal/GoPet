@@ -25,7 +25,9 @@ def default_checkpoint(agent_id: str) -> Path:
         raise ValueError(f"Unknown agent '{agent_id}'. Known agents: {known}") from exc
 
 
-def resolve_checkpoint(agent_id: str, checkpoint: Optional[str]) -> Path:
+def resolve_checkpoint(agent_id: str, checkpoint: Optional[str] = None) -> Path:
     if checkpoint:
         return Path(checkpoint)
-    return default_checkpoint(agent_id)
+    base = default_checkpoint(agent_id)
+    latest = base.parent / f"{base.stem}_latest{base.suffix or '.pt'}"
+    return latest if latest.exists() else base

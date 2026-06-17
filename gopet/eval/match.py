@@ -15,7 +15,7 @@ from gopet.web.agents import Agent
 
 @dataclass(frozen=True)
 class GameOutcome:
-    winner: Color
+    winner: Optional[Color]
     end_reason: str
     move_count: int
     black_agent: str
@@ -29,6 +29,7 @@ class MatchStats:
     games: int
     wins_a: int = 0
     wins_b: int = 0
+    draws: int = 0
     wins_black: int = 0
     wins_white: int = 0
     resignations: int = 0
@@ -54,12 +55,12 @@ def default_max_moves(board_size: int) -> int:
     return 2 * board_size * board_size
 
 
-def resolve_winner(state: GameState, *, komi: float, end_reason: str) -> Color:
+def resolve_winner(state: GameState, *, komi: float, end_reason: str) -> Optional[Color]:
     """Determine the winner for a finished or force-stopped game.
 
     Komi is applied only when the game ends by scoring (two consecutive passes).
     Forced ``max_moves`` stops use raw area counts so an unfinished game is not
-    automatically awarded to White via komi.
+    automatically awarded to White via komi. Ties on ``max_moves`` count as draws.
     """
 
     if state.last_move is not None and state.last_move.is_resign:
@@ -74,6 +75,8 @@ def resolve_winner(state: GameState, *, komi: float, end_reason: str) -> Color:
         return Color.black
     if white_score > black_score:
         return Color.white
+    if end_reason == "max_moves":
+        return None
     return Color.white
 
 
@@ -160,8 +163,10 @@ def run_match_series(
 
         if outcome.winner == Color.black:
             stats.wins_black += 1
-        else:
+        elif outcome.winner == Color.white:
             stats.wins_white += 1
+        else:
+            stats.draws += 1
 
         black_is_a = game_index % 2 == 1
         if outcome.winner == Color.black:
@@ -169,10 +174,11 @@ def run_match_series(
                 stats.wins_a += 1
             else:
                 stats.wins_b += 1
-        elif black_is_a:
-            stats.wins_b += 1
-        else:
-            stats.wins_a += 1
+        elif outcome.winner == Color.white:
+            if black_is_a:
+                stats.wins_b += 1
+            else:
+                stats.wins_a += 1
 
         stats.by_end_reason[outcome.end_reason] = stats.by_end_reason.get(outcome.end_reason, 0) + 1
         if outcome.end_reason == "resign":
@@ -204,6 +210,8 @@ def format_match_report(stats: MatchStats) -> str:
         f"  {stats.agent_b}: {stats.wins_b:,} wins ({stats.win_rate_b * 100:.1f}%)",
         f"  Black won: {stats.wins_black:,}  White won: {stats.wins_white:,}",
     ]
+    if stats.draws:
+        lines.append(f"  Draws: {stats.draws:,}")
     if stats.resignations:
         lines.append(f"  Resignations: {stats.resignations:,}")
     if stats.max_move_stops:

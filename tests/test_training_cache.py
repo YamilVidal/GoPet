@@ -70,6 +70,20 @@ def test_manifest_written_and_validates_cache(tmp_path: Path) -> None:
     )
 
 
+def test_cache_without_manifest_is_invalid(tmp_path: Path) -> None:
+    (tmp_path / "train_features.npy").write_bytes(b"")
+    (tmp_path / "train_labels.npy").write_bytes(b"")
+    assert not cache_is_valid(
+        tmp_path,
+        prefix="train",
+        sgf_directory=tmp_path / "sgf",
+        max_games=1,
+        seed=0,
+        board_size=19,
+        num_planes=5,
+    )
+
+
 def test_record_agent_usage_updates_manifest_and_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from gopet.data import training_cache
 

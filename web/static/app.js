@@ -11,9 +11,12 @@ const ASSET_BASE = "/static/vendor/jgoboard/";
 setAssetBaseUrl(ASSET_BASE);
 
 const ui = {
+  mode: document.getElementById("mode"),
   boardSize: document.getElementById("board-size"),
   theme: document.getElementById("theme"),
   agent: document.getElementById("agent"),
+  agentBlack: document.getElementById("agent-black"),
+  agentWhite: document.getElementById("agent-white"),
   humanColor: document.getElementById("human-color"),
   toPlay: document.getElementById("to-play"),
   moveNumber: document.getElementById("move-number"),
@@ -38,6 +41,10 @@ let renderer = null;
 let moveRecord = [];
 let waitingForBot = false;
 let gameOver = false;
+
+function isBotVsBot() {
+  return ui.mode.value === "bot_vs_bot";
+}
 
 function addLog(text) {
   const line = document.createElement("div");
@@ -109,7 +116,17 @@ function botPlayerStone() {
 }
 
 function isHumanTurn() {
+  if (isBotVsBot()) {
+    return false;
+  }
   return !gameOver && !waitingForBot && game.currentPlayer === humanPlayerStone();
+}
+
+function agentForCurrentTurn() {
+  if (isBotVsBot()) {
+    return game.currentPlayer === STONE.BLACK ? ui.agentBlack.value : ui.agentWhite.value;
+  }
+  return ui.agent.value;
 }
 
 function refreshMarkers() {
@@ -135,11 +152,15 @@ function updateUI() {
   ui.whiteCaptures.textContent = String(state.captures.white);
   ui.koPoint.textContent = state.ko || "none";
   ui.undoBtn.disabled = !state.canUndo || waitingForBot;
+  ui.passBtn.disabled = waitingForBot || gameOver || isBotVsBot() || !isHumanTurn();
 
   if (gameOver) {
     setStatus("Game over");
   } else if (waitingForBot) {
     setStatus("Waiting for bot...");
+  } else if (isBotVsBot()) {
+    const agentName = agentForCurrentTurn();
+    setStatus(`Bot thinking (${labels[game.currentPlayer]}: ${agentName})`);
   } else if (isHumanTurn()) {
     setStatus(`Your turn (${labels[humanPlayerStone()]})`);
   } else {
@@ -162,7 +183,10 @@ function checkGameOver() {
 }
 
 async function requestBotMove() {
-  if (gameOver || game.currentPlayer !== botPlayerStone()) {
+  if (gameOver) {
+    return;
+  }
+  if (!isBotVsBot() && game.currentPlayer !== botPlayerStone()) {
     return;
   }
 
@@ -170,13 +194,17 @@ async function requestBotMove() {
   updateUI();
 
   try {
-    const response = await fetch(`/api/select-move/${ui.agent.value}`, {
+    const agentName = agentForCurrentTurn();
+    const prefix = isBotVsBot()
+      ? `${labels[game.currentPlayer]} (${agentName})`
+      : `Bot (${agentName})`;
+    const response = await fetch(`/api/select-move/${agentName}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         board_size: parseInt(ui.boardSize.value, 10),
         moves: moveRecord.slice(),
-        against_human: true,
+        against_human: !isBotVsBot(),
       }),
     });
 
@@ -189,7 +217,7 @@ async function requestBotMove() {
       return;
     }
 
-    applyServerMove(data.bot_move, "Bot");
+    applyServerMove(data.bot_move, prefix);
     if (data.diagnostics && Object.keys(data.diagnostics).length > 0) {
       addLog(formatDiagnostics(data.diagnostics));
     }
@@ -254,7 +282,14 @@ function handleHumanPlay(vertex) {
 }
 
 function maybeTriggerBot() {
-  if (!gameOver && game.currentPlayer === botPlayerStone() && !waitingForBot) {
+  if (gameOver || waitingForBot) {
+    return;
+  }
+  if (isBotVsBot()) {
+    requestBotMove();
+    return;
+  }
+  if (game.currentPlayer === botPlayerStone()) {
     requestBotMove();
   }
 }
@@ -304,19 +339,39 @@ async function resetGame() {
   maybeTriggerBot();
 }
 
+function syncModeUI() {
+  const botvbot = isBotVsBot();
+  ui.humanColor.disabled = botvbot;
+  ui.agent.disabled = botvbot;
+  ui.agentBlack.disabled = !botvbot;
+  ui.agentWhite.disabled = !botvbot;
+  updateUI();
+}
+
 async function init() {
   try {
     const response = await fetch("/api/agents");
     const data = await response.json();
-    ui.agent.innerHTML = "";
-    for (const name of data.agents) {
-      const option = document.createElement("option");
-      option.value = name;
-      option.textContent = name;
-      ui.agent.appendChild(option);
+    const populate = (select) => {
+      select.innerHTML = "";
+      for (const name of data.agents) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        select.appendChild(option);
+      }
+    };
+    populate(ui.agent);
+    populate(ui.agentBlack);
+    populate(ui.agentWhite);
+    if ([...data.agents].includes("policy")) {
+      ui.agentBlack.value = "policy";
+      ui.agentWhite.value = "policy";
     }
   } catch (error) {
     ui.agent.innerHTML = '<option value="random">random</option>';
+    ui.agentBlack.innerHTML = '<option value="random">random</option>';
+    ui.agentWhite.innerHTML = '<option value="random">random</option>';
     addLog(`Could not load agents: ${error.message}`);
   }
 
@@ -357,10 +412,17 @@ async function init() {
   });
 
   ui.boardSize.addEventListener("change", () => resetGame());
+  ui.mode.addEventListener("change", () => {
+    syncModeUI();
+    resetGame();
+  });
   ui.humanColor.addEventListener("change", () => resetGame());
   ui.agent.addEventListener("change", () => resetGame());
+  ui.agentBlack.addEventListener("change", () => resetGame());
+  ui.agentWhite.addEventListener("change", () => resetGame());
 
   await resetGame();
+  syncModeUI();
 }
 
 init();

@@ -55,4 +55,5 @@ def test_default_checkpoint_for_agents() -> None:
 def test_resolve_checkpoint_prefers_explicit_path() -> None:
     explicit = resolve_checkpoint("basic_cnn", "custom/model.pt")
     assert explicit == Path("custom/model.pt")
-    assert resolve_checkpoint("basic_cnn_5x5", None).name == "basic_cnn_5x5.pt"
+    resolved = resolve_checkpoint("basic_cnn_5x5", None)
+    assert resolved.name in {"basic_cnn_5x5.pt", "basic_cnn_5x5_latest.pt"}
