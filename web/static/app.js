@@ -15,8 +15,11 @@ const ui = {
   boardSize: document.getElementById("board-size"),
   theme: document.getElementById("theme"),
   agent: document.getElementById("agent"),
+  checkpoint: document.getElementById("checkpoint"),
   agentBlack: document.getElementById("agent-black"),
   agentWhite: document.getElementById("agent-white"),
+  checkpointBlack: document.getElementById("checkpoint-black"),
+  checkpointWhite: document.getElementById("checkpoint-white"),
   humanColor: document.getElementById("human-color"),
   toPlay: document.getElementById("to-play"),
   moveNumber: document.getElementById("move-number"),
@@ -41,6 +44,7 @@ let renderer = null;
 let moveRecord = [];
 let waitingForBot = false;
 let gameOver = false;
+let agentCheckpoints = {};
 
 function isBotVsBot() {
   return ui.mode.value === "bot_vs_bot";
@@ -129,6 +133,30 @@ function agentForCurrentTurn() {
   return ui.agent.value;
 }
 
+function checkpointForCurrentTurn() {
+  if (isBotVsBot()) {
+    return game.currentPlayer === STONE.BLACK ? ui.checkpointBlack.value : ui.checkpointWhite.value;
+  }
+  return ui.checkpoint.value;
+}
+
+function populateCheckpointSelect(select, agentName) {
+  select.innerHTML = "";
+  const optionDefault = document.createElement("option");
+  optionDefault.value = "";
+  optionDefault.textContent = "default";
+  select.appendChild(optionDefault);
+
+  const checkpoints = agentCheckpoints?.[agentName] || [];
+  for (const name of checkpoints) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    select.appendChild(option);
+  }
+  select.value = "";
+}
+
 function refreshMarkers() {
   game.board.each((point, intersection) => {
     if (intersection.mark !== MARK.NONE) {
@@ -195,6 +223,7 @@ async function requestBotMove() {
 
   try {
     const agentName = agentForCurrentTurn();
+    const checkpoint = checkpointForCurrentTurn();
     const prefix = isBotVsBot()
       ? `${labels[game.currentPlayer]} (${agentName})`
       : `Bot (${agentName})`;
@@ -205,6 +234,7 @@ async function requestBotMove() {
         board_size: parseInt(ui.boardSize.value, 10),
         moves: moveRecord.slice(),
         against_human: !isBotVsBot(),
+        checkpoint: checkpoint || null,
       }),
     });
 
@@ -343,8 +373,11 @@ function syncModeUI() {
   const botvbot = isBotVsBot();
   ui.humanColor.disabled = botvbot;
   ui.agent.disabled = botvbot;
+  ui.checkpoint.disabled = botvbot;
   ui.agentBlack.disabled = !botvbot;
   ui.agentWhite.disabled = !botvbot;
+  ui.checkpointBlack.disabled = !botvbot;
+  ui.checkpointWhite.disabled = !botvbot;
   updateUI();
 }
 
@@ -352,6 +385,7 @@ async function init() {
   try {
     const response = await fetch("/api/agents");
     const data = await response.json();
+    agentCheckpoints = data.checkpoints || {};
     const populate = (select) => {
       select.innerHTML = "";
       for (const name of data.agents) {
@@ -368,10 +402,16 @@ async function init() {
       ui.agentBlack.value = "policy";
       ui.agentWhite.value = "policy";
     }
+    populateCheckpointSelect(ui.checkpoint, ui.agent.value);
+    populateCheckpointSelect(ui.checkpointBlack, ui.agentBlack.value);
+    populateCheckpointSelect(ui.checkpointWhite, ui.agentWhite.value);
   } catch (error) {
     ui.agent.innerHTML = '<option value="random">random</option>';
     ui.agentBlack.innerHTML = '<option value="random">random</option>';
     ui.agentWhite.innerHTML = '<option value="random">random</option>';
+    ui.checkpoint.innerHTML = '<option value="">default</option>';
+    ui.checkpointBlack.innerHTML = '<option value="">default</option>';
+    ui.checkpointWhite.innerHTML = '<option value="">default</option>';
     addLog(`Could not load agents: ${error.message}`);
   }
 
@@ -417,9 +457,21 @@ async function init() {
     resetGame();
   });
   ui.humanColor.addEventListener("change", () => resetGame());
-  ui.agent.addEventListener("change", () => resetGame());
-  ui.agentBlack.addEventListener("change", () => resetGame());
-  ui.agentWhite.addEventListener("change", () => resetGame());
+  ui.agent.addEventListener("change", () => {
+    populateCheckpointSelect(ui.checkpoint, ui.agent.value);
+    resetGame();
+  });
+  ui.checkpoint.addEventListener("change", () => resetGame());
+  ui.agentBlack.addEventListener("change", () => {
+    populateCheckpointSelect(ui.checkpointBlack, ui.agentBlack.value);
+    resetGame();
+  });
+  ui.agentWhite.addEventListener("change", () => {
+    populateCheckpointSelect(ui.checkpointWhite, ui.agentWhite.value);
+    resetGame();
+  });
+  ui.checkpointBlack.addEventListener("change", () => resetGame());
+  ui.checkpointWhite.addEventListener("change", () => resetGame());
 
   await resetGame();
   syncModeUI();

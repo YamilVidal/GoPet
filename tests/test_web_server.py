@@ -62,3 +62,27 @@ def test_server_validates_bot_move() -> None:
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["bot_move"] == "pass"
+
+
+def test_list_agents_includes_checkpoints_map() -> None:
+    app = create_app(agents={"random": RandomAgent()})
+    client = app.test_client()
+    response = client.get("/api/agents")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "agents" in payload
+    assert "checkpoints" in payload
+    assert "random" in payload["checkpoints"]
+
+
+def test_server_rejects_checkpoint_for_random_agent() -> None:
+    app = create_app(agents={"random": RandomAgent()})
+    client = app.test_client()
+    response = client.post(
+        "/api/select-move/random",
+        data=json.dumps(
+            {"board_size": 9, "moves": [], "against_human": False, "checkpoint": "anything.pt"}
+        ),
+        content_type="application/json",
+    )
+    assert response.status_code == 400

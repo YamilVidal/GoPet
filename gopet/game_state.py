@@ -45,6 +45,7 @@ class HistoryEntry:
     previous_signatures: FrozenSet[Tuple[Color, bytes]]
     black_captures: int
     white_captures: int
+    ko_rule: str
     last_move: Optional[Move]
     previous_state: Optional[object]
 
@@ -59,6 +60,7 @@ class GameState:
         *,
         black_captures: int = 0,
         white_captures: int = 0,
+        ko_rule: str = "capture_superko",
     ) -> None:
         self.board = board
         self.next_player = next_player
@@ -66,6 +68,7 @@ class GameState:
         self.last_move = move
         self.black_captures = black_captures
         self.white_captures = white_captures
+        self.ko_rule = ko_rule
 
         if previous is None:
             self.previous_signatures: FrozenSet[Tuple[Color, bytes]] = frozenset()
@@ -78,13 +81,13 @@ class GameState:
         self._undo_stack: List[HistoryEntry] = []
 
     @classmethod
-    def new_game(cls, board_size: int | Tuple[int, int]) -> GameState:
+    def new_game(cls, board_size: int | Tuple[int, int], *, ko_rule: str = "capture_superko") -> GameState:
         if isinstance(board_size, int):
             height = width = board_size
         else:
             height, width = board_size
         board = FastBoard(height, width)
-        return cls(board, Color.black, None, None)
+        return cls(board, Color.black, None, None, ko_rule=ko_rule)
 
     def clone(self) -> GameState:
         cloned = GameState(
@@ -94,6 +97,7 @@ class GameState:
             self.last_move,
             black_captures=self.black_captures,
             white_captures=self.white_captures,
+            ko_rule=self.ko_rule,
         )
         cloned.previous_signatures = self.previous_signatures
         cloned.previous_state = self.previous_state
@@ -120,6 +124,7 @@ class GameState:
             move,
             black_captures=black_captures,
             white_captures=white_captures,
+            ko_rule=self.ko_rule,
         )
 
     def apply_move_mut(self, move: Move) -> None:
@@ -130,6 +135,7 @@ class GameState:
             previous_signatures=self.previous_signatures,
             black_captures=self.black_captures,
             white_captures=self.white_captures,
+            ko_rule=self.ko_rule,
             last_move=self.last_move,
             previous_state=self.previous_state,
         )
@@ -177,6 +183,7 @@ class GameState:
         self.previous_signatures = entry.previous_signatures
         self.black_captures = entry.black_captures
         self.white_captures = entry.white_captures
+        self.ko_rule = entry.ko_rule
         self.last_move = entry.last_move
         self.previous_state = entry.previous_state
 
@@ -203,6 +210,29 @@ class GameState:
         self.board.restore(snapshot)
         return next_situation in self.previous_signatures
 
+    def does_move_violate_simple_ko(self, player: Color, move: Move) -> bool:
+        """Simple ko: forbid recreating the board position from two plies ago."""
+        if not move.is_play:
+            return False
+        if self.previous_state is None or not isinstance(self.previous_state, GameState):
+            return False
+        assert move.point is not None
+        row, col = move.point.row, move.point.col
+        # Only relevant if the move captures (matches jGoBoard koPoint semantics).
+        if not self.board.will_capture(player, row, col):
+            return False
+
+        snapshot = self.board.snapshot()
+        placed, _ = self.board.place_stone(player, row, col)
+        if not placed:
+            self.board.restore(snapshot)
+            return False
+        next_situation = (player.other, board_signature(self.board))
+        self.board.restore(snapshot)
+
+        two_plies_ago = (self.previous_state.next_player, board_signature(self.previous_state.board))
+        return next_situation == two_plies_ago
+
     def is_valid_move(self, move: Move) -> bool:
         if self.is_over():
             return False
@@ -214,8 +244,12 @@ class GameState:
             return False
         if self.is_move_self_capture(self.next_player, move):
             return False
-        if self.does_move_violate_ko(self.next_player, move):
-            return False
+        if self.ko_rule == "simple":
+            if self.does_move_violate_simple_ko(self.next_player, move):
+                return False
+        else:
+            if self.does_move_violate_ko(self.next_player, move):
+                return False
         return True
 
     def is_over(self) -> bool:

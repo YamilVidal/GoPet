@@ -7,7 +7,7 @@ import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -229,13 +229,48 @@ class PolicyAgent(Agent):
 
 
 def replay_state(board_size: int, moves: List[str]) -> GameState:
-    state = GameState.new_game(board_size)
+    # Web UI uses jGoBoard with simple ko; match that to avoid UI/backend desync.
+    state = GameState.new_game(board_size, ko_rule="simple")
     for vertex in moves:
         move = move_from_vertex(vertex, board_size)
         if not state.is_valid_move(move):
             raise ValueError(f"Illegal replay move: {vertex}")
         state = state.apply_move(move)
     return state
+
+
+def list_policy_checkpoints(agent_id: str) -> List[str]:
+    """List playable checkpoint filenames for a registry policy agent.
+
+    Returned values are *filenames* (not full paths) and are intended to be safe
+    for use in the web UI.
+    """
+
+    from agents.registry import default_checkpoint
+
+    base = default_checkpoint(agent_id)
+    directory = base.parent
+    if not directory.exists():
+        return []
+    out: List[str] = []
+    for path in directory.glob("*.pt"):
+        # Exclude training-state payloads (not playable by PolicyAgent).
+        if "training_state" in path.stem:
+            continue
+        out.append(path.name)
+    return sorted(set(out))
+
+
+def resolve_policy_checkpoint_path(agent_id: str, checkpoint_name: str) -> Path:
+    """Resolve a checkpoint filename to an on-disk path for a registry agent."""
+
+    from agents.registry import default_checkpoint
+
+    allowed = set(list_policy_checkpoints(agent_id))
+    if checkpoint_name not in allowed:
+        raise ValueError(f"Unknown checkpoint '{checkpoint_name}' for agent '{agent_id}'")
+    base = default_checkpoint(agent_id)
+    return base.parent / checkpoint_name
 
 
 def build_default_agents(model_path: Optional[str] = None) -> Dict[str, Agent]:
@@ -263,3 +298,20 @@ def build_default_agents(model_path: Optional[str] = None) -> Dict[str, Agent]:
     if model_path:
         agents["policy"] = PolicyAgent(str(Path(model_path)))
     return agents
+
+
+class PolicyAgentCache:
+    """Cache PolicyAgent instances by (agent_id, checkpoint filename)."""
+
+    def __init__(self) -> None:
+        self._cache: Dict[Tuple[str, str], PolicyAgent] = {}
+
+    def get(self, agent_id: str, checkpoint_name: str) -> PolicyAgent:
+        key = (agent_id, checkpoint_name)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        path = resolve_policy_checkpoint_path(agent_id, checkpoint_name)
+        agent = PolicyAgent(str(path))
+        self._cache[key] = agent
+        return agent
