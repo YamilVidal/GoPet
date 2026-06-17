@@ -1,38 +1,31 @@
 #!/usr/bin/env python
 """Inspect agent training runs (summary and plots)."""
 
+from __future__ import annotations
+
 import argparse
 import sys
+from typing import List, Optional
 
 from inspect_training.plot_metrics import main as plot_main
 from inspect_training.summary import main as summary_main
 
 
-def main() -> int:
+def main(argv: Optional[List[str]] = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+
     parser = argparse.ArgumentParser(description="Inspect GoPet agent training")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    summary_parser = sub.add_parser("summary", help="Print checkpoint and history summary")
-    summary_parser.add_argument("--checkpoint", default="agents/basic_cnn/checkpoints/basic_cnn.pt")
+    sub.add_parser("summary", help="Print checkpoint and history summary")
+    sub.add_parser("plot", help="Plot loss and accuracy curves")
 
-    plot_parser = sub.add_parser("plot", help="Plot loss and accuracy curves")
-    plot_parser.add_argument("--history", default=None)
-    plot_parser.add_argument("--checkpoint", default="agents/basic_cnn/checkpoints/basic_cnn.pt")
-    plot_parser.add_argument("--output", default=None)
-    plot_parser.add_argument("--show", action="store_true")
+    args, remainder = parser.parse_known_args(argv)
 
-    args, remainder = parser.parse_known_args()
     if args.command == "summary":
-        return summary_main(["--checkpoint", args.checkpoint])
+        return summary_main(remainder if remainder else None)
     if args.command == "plot":
-        plot_argv = ["--checkpoint", args.checkpoint]
-        if args.history:
-            plot_argv.extend(["--history", args.history])
-        if args.output:
-            plot_argv.extend(["--output", args.output])
-        if args.show:
-            plot_argv.append("--show")
-        return plot_main(plot_argv)
+        return plot_main(remainder if remainder else None)
     return 1
 
 

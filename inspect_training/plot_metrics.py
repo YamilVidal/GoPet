@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from inspect_training.agents import add_agent_arguments, resolve_checkpoint
 from inspect_training.history import TrainingHistory, history_path_for_checkpoint, load_history
 
 
@@ -60,15 +61,11 @@ def plot_history(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Plot training metrics from history JSON")
+    add_agent_arguments(parser)
     parser.add_argument(
         "--history",
         default=None,
         help="Path to *_history.json (default: derived from --checkpoint)",
-    )
-    parser.add_argument(
-        "--checkpoint",
-        default="agents/basic_cnn/checkpoints/basic_cnn.pt",
-        help="Checkpoint path used to locate *_history.json",
     )
     parser.add_argument(
         "--output",
@@ -82,7 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    history_path = Path(args.history) if args.history else history_path_for_checkpoint(Path(args.checkpoint))
+    checkpoint = resolve_checkpoint(args.agent, args.checkpoint)
+    history_path = Path(args.history) if args.history else history_path_for_checkpoint(checkpoint)
     if not history_path.exists():
         print(f"History file not found: {history_path}")
         print("Run training after this update, or pass --history explicitly.")

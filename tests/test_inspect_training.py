@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from inspect_training.agents import default_checkpoint, resolve_checkpoint
 from inspect_training.history import (
     EpochRecord,
     TrainingHistory,
@@ -44,3 +45,14 @@ def test_append_replaces_same_epoch(tmp_path: Path) -> None:
 def test_history_path_for_checkpoint() -> None:
     path = history_path_for_checkpoint(Path("agents/basic_cnn/checkpoints/basic_cnn.pt"))
     assert path.name == "basic_cnn_history.json"
+
+
+def test_default_checkpoint_for_agents() -> None:
+    assert default_checkpoint("basic_cnn").name == "basic_cnn.pt"
+    assert default_checkpoint("basic_cnn_5x5").name == "basic_cnn_5x5.pt"
+
+
+def test_resolve_checkpoint_prefers_explicit_path() -> None:
+    explicit = resolve_checkpoint("basic_cnn", "custom/model.pt")
+    assert explicit == Path("custom/model.pt")
+    assert resolve_checkpoint("basic_cnn_5x5", None).name == "basic_cnn_5x5.pt"

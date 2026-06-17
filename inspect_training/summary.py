@@ -8,6 +8,7 @@ from pathlib import Path
 
 import torch
 
+from inspect_training.agents import add_agent_arguments, resolve_checkpoint
 from inspect_training.history import history_path_for_checkpoint, load_history
 
 
@@ -65,17 +66,13 @@ def print_summary(*, checkpoint: Path, history_path: Path, state_path: Path) -> 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Summarize agent training checkpoint")
-    parser.add_argument(
-        "--checkpoint",
-        default="agents/basic_cnn/checkpoints/basic_cnn.pt",
-        help="Main checkpoint path",
-    )
+    add_agent_arguments(parser)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    checkpoint = Path(args.checkpoint)
+    checkpoint = resolve_checkpoint(args.agent, args.checkpoint)
     stem = checkpoint.stem
     directory = checkpoint.parent
     history_path = history_path_for_checkpoint(checkpoint)
