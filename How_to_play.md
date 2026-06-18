@@ -29,7 +29,9 @@ If jGoBoard is missing, the server prints a warning and the board will not rende
 
 ### Available agents
 
-When the server starts, it loads agents from `agents/registry.py` whose checkpoints exist on disk (for example `basic_cnn`, `basic_cnn_5x5`). The `random` agent is always available.
+When the server starts, it loads agents from `agents/registry.py` whose checkpoints exist on disk (for example `basic_cnn`, `basic_cnn_5x5`, `cnn_triad`). The `random` agent is always available.
+
+`cnn_triad` is a three-head regional agent and only supports **19×19** play. Use the `cnn_triad.pt` bundle checkpoint (not the per-head `*_corner.pt` files).
 
 For policy agents you can pick a **checkpoint** in the UI (for example `basic_cnn_epoch_010.pt`). Leave it on **default** to use the latest checkpoint (`*_latest.pt` when present).
 

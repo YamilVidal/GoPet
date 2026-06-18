@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from agents.registry import list_policy_agents, resolve_checkpoint
-from gopet.web.agents import Agent, PolicyAgent, RandomAgent
+from gopet.web.agents import Agent, RandomAgent, load_policy_agent
 
 MATCH_AGENT_CHOICES = ["random", *list_policy_agents()]
 
@@ -31,6 +31,7 @@ def load_match_agent(
             f"Checkpoint not found for agent '{agent_id}': {path}. Train the agent first."
         )
 
-    agent = PolicyAgent(str(path), device=device)
-    agent.set_game_context(against_human=False)
+    agent = load_policy_agent(agent_id, str(path), device=device)
+    if hasattr(agent, "set_game_context"):
+        agent.set_game_context(against_human=False)
     return agent

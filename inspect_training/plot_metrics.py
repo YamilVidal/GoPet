@@ -52,8 +52,9 @@ def plot_history(
 
     fig.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, dpi=150)
-    print(f"Saved plot to {output}")
+    resolved = output.resolve()
+    fig.savefig(resolved, dpi=150)
+    print(f"Saved plot to {resolved}")
     if show:
         plt.show()
     plt.close(fig)

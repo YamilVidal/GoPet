@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 AGENT_CHECKPOINTS: Dict[str, Path] = {
     "basic_cnn": ROOT / "agents" / "basic_cnn" / "checkpoints" / "basic_cnn.pt",
     "basic_cnn_5x5": ROOT / "agents" / "basic_cnn_5x5" / "checkpoints" / "basic_cnn_5x5.pt",
+    "cnn_triad": ROOT / "agents" / "cnn_triad" / "checkpoints" / "cnn_triad.pt",
 }
 
 

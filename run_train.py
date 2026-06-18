@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 TRAIN_MODULES: Dict[str, str] = {
     "basic_cnn": "agents.basic_cnn.train",
     "basic_cnn_5x5": "agents.basic_cnn_5x5.train",
+    "cnn_triad": "agents.cnn_triad.train",
 }
 
 

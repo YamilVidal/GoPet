@@ -239,6 +239,14 @@ def replay_state(board_size: int, moves: List[str]) -> GameState:
     return state
 
 
+def load_policy_agent(agent_id: str, model_path: str, device: str = "cpu") -> Agent:
+    if agent_id == "cnn_triad":
+        from agents.cnn_triad.agent import TriadPolicyAgent
+
+        return TriadPolicyAgent(model_path, device=device)
+    return PolicyAgent(model_path, device=device)
+
+
 def list_policy_checkpoints(agent_id: str) -> List[str]:
     """List playable checkpoint filenames for a registry policy agent.
 
@@ -256,6 +264,10 @@ def list_policy_checkpoints(agent_id: str) -> List[str]:
     for path in directory.glob("*.pt"):
         # Exclude training-state payloads (not playable by PolicyAgent).
         if "training_state" in path.stem:
+            continue
+        if agent_id == "cnn_triad" and any(
+            token in path.stem for token in ("_corner", "_side", "_center")
+        ):
             continue
         out.append(path.name)
     return sorted(set(out))
@@ -290,7 +302,7 @@ def build_default_agents(model_path: Optional[str] = None) -> Dict[str, Agent]:
         for agent_id in list_policy_agents():
             chosen = resolve_checkpoint(agent_id)
             if chosen.exists():
-                agents[agent_id] = PolicyAgent(str(chosen))
+                agents[agent_id] = load_policy_agent(agent_id, str(chosen))
     except Exception:
         # If registry import fails, keep server usable with at least random / policy.
         pass
@@ -301,17 +313,17 @@ def build_default_agents(model_path: Optional[str] = None) -> Dict[str, Agent]:
 
 
 class PolicyAgentCache:
-    """Cache PolicyAgent instances by (agent_id, checkpoint filename)."""
+    """Cache policy agent instances by (agent_id, checkpoint filename)."""
 
     def __init__(self) -> None:
-        self._cache: Dict[Tuple[str, str], PolicyAgent] = {}
+        self._cache: Dict[Tuple[str, str], Agent] = {}
 
-    def get(self, agent_id: str, checkpoint_name: str) -> PolicyAgent:
+    def get(self, agent_id: str, checkpoint_name: str) -> Agent:
         key = (agent_id, checkpoint_name)
         cached = self._cache.get(key)
         if cached is not None:
             return cached
         path = resolve_policy_checkpoint_path(agent_id, checkpoint_name)
-        agent = PolicyAgent(str(path))
+        agent = load_policy_agent(agent_id, str(path))
         self._cache[key] = agent
         return agent
